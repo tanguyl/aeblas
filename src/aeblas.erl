@@ -1,6 +1,6 @@
 -module(aeblas).
 -on_load(init/0).
--export([btl/1, ltb/1, vector/1, daxpy/6, add/2, zipwith_concurrent/3, n_for_milli_daxpy/0]).
+-export([btl/1, ltb/1, vector/1, daxpy/6, wait_c/1, zipwith_concurrent/3, n_for_milli_daxpy/0]).
 
 -record(vector,{content, n, stride}).
 -type vector():: #vector{}.
@@ -86,8 +86,6 @@ n_for_milli_daxpy()->
 
 
 
-
-
 add(#vector{content=Xb, n=N,stride=Sx}, #vector{content=Yb, n=N,stride=Sy})->
   daxpy_nif(N, 1.0, Xb, Sx, Yb, Sy).
 
@@ -102,6 +100,9 @@ daxpy(N, Alpha, X, Stride_x, Y, Stride_y)->
   end.
 
 daxpy_nif(_,_,_,_,_,_)->
+  nif_not_loaded.
+
+wait_c(_)->
   nif_not_loaded.
 
 
