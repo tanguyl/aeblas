@@ -111,13 +111,12 @@ wait_c(_)->
 
 
 
-zipwith_conc(Op, M1, M2) ->
+zipwith_concurrent(Op, M1, M2) ->
     ParentPID = self(),
 
     Producer = fun(L1, L2)->
       spawn(fun() ->
-        Result = lists:zipwith(fun(E1, E2) -> Op(E1, E2) end, L1, L2),
-        ParentPID ! {Result, self()}
+        ParentPID ! {Op(L1, L2), self()}
       end)
     end,
 
@@ -126,7 +125,8 @@ zipwith_conc(Op, M1, M2) ->
           Result
       after 10000*length(M1) ->
         timeout
-      end,
+      end
+    end,
 
     PidMat = lists:zipwith(Producer,M1,M2),
     lists:map(Consumer,PidMat).
