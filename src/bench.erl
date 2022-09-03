@@ -85,3 +85,42 @@ bench_erl(Ns)->
   T_conc = Run_bench(fun bench_conc/2),
   T_seq  = Run_bench(fun bench_seq/2),
   {{concurrent, T_conc}, {sequential, T_seq}, {list_size, N_e}}.
+
+
+zipwith_concurrent(F, L1, L2)->
+  ParentPID = self(),
+  N_elems   = length(L1),
+
+  %Receive datasets...
+  Worker_collector = 
+  fun()->
+    Collect =
+    fun Iterate(Id, Acc) when Id == N_elems->
+      lists:reverse(Acc);
+    Iterate(Id, Acc)->
+      receive {Id, Result} ->
+        Iterate(Id+1, [Result|Acc])
+      after 5000 -> 
+          timeout
+      end
+    end,
+    ParentPID ! Collect(0, [])
+  end,
+  % Launch collector
+  CollectorPID = spawn(Worker_collector),
+  
+  % Launch datasets...
+  Generate_work =
+  fun It(_, [],[])->
+      ok;
+    It(I,[L1_h|L1_t], [L2_h|L2_t])->
+      spawn(fun() -> CollectorPID ! {I, F(L1_h,L2_h)} end),
+      It(I+1, L1_t, L2_t)
+  end,
+  % Launch generator
+  Generate_work(0, L1, L2),
+
+  receive Result -> Result
+  after N_elems * 2000 ->
+    timeout
+  end.
