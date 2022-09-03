@@ -72,3 +72,16 @@ bench_seq(Fun, Bs)->
         T / 1000000
     end,
     bench_n(Bench, 20).
+
+
+bench_erl(Ns)->
+  N_e = bench:n_for_ms(fun bench:add_e/2, fun(N)->lists:seq(1,N)end),
+  V_e = lists:seq(1,N_e),
+
+  Run_bench = fun(Bench)-> 
+    lists:map(fun(N)->Bench(fun add_e/2, gen_n_list(V_e, N))end, Ns) 
+  end,
+
+  T_conc = Run_bench(fun bench_conc/2),
+  T_seq  = Run_bench(fun bench_seq/2),
+  {{concurrent, T_conc}, {sequential, T_seq}, {list_size, N_e}}.

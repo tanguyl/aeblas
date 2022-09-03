@@ -117,12 +117,11 @@ zipwith_concurrent(F, L1, L2)->
   Worker_collector = 
   fun()->
     Collect =
-    fun Iterate(0, Acc)->
+    fun Iterate(Id, Acc) when Id == N_elems->
       lists:reverse(Acc);
     Iterate(Id, Acc)->
       receive {Id, Result} ->
-        io:format("Received ~w ~n", [Id]),
-        Iterate(Id-1, [Result|Acc])
+        Iterate(Id+1, [Result|Acc])
       after 5000 -> 
           timeout
       end
@@ -134,14 +133,14 @@ zipwith_concurrent(F, L1, L2)->
   
   % Launch datasets...
   Generate_work =
-  fun It(0, [],[])->
+  fun It(_, [],[])->
       ok;
     It(I,[L1_h|L1_t], [L2_h|L2_t])->
-      spawn(fun() -> io:format("Generating ~w ~n",[I]), CollectorPID ! {I, F(L1_h,L2_h)} end),
-      It(I-1, L1_t, L2_t)
+      spawn(fun() -> CollectorPID ! {I, F(L1_h,L2_h)} end),
+      It(I+1, L1_t, L2_t)
   end,
   % Launch generator
-  Generate_work(N_elems, L1, L2),
+  Generate_work(0, L1, L2),
 
   receive Result -> Result
   after N_elems * 2000 ->
