@@ -126,7 +126,7 @@ zipwith_concurrent(F, L1, L2)->
           timeout
       end
     end,
-    ParentPID ! Collect(N_elems, [])
+    ParentPID ! Collect(0, [])
   end,
   % Launch collector
   CollectorPID = spawn(Worker_collector),
