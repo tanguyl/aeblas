@@ -62,27 +62,31 @@ in_range(V, Min, Max)->
 n_for_milli_daxpy()->
   V = aeblas:ltb(lists:seq(1,10000000)),
   Bench = fun(N)->
-      N_runs = 1000,
+      N_runs = 40,
       Benched   = fun()-> aeblas:daxpy(N, 1.0, V,1,V,1) end,
       Get_Milli = fun()-> {T,_} = timer:tc(Benched),  T/1000 end,
       Avg_run   = lists:foldl(fun(T,Acc) -> T/N_runs+Acc end, 0, [Get_Milli() || _ <- lists:seq(1,N_runs)]),
       Avg_run
   end,
 
-  Find_milli = fun It(Cur_n, Cur_t)->
-    Ratio = 1/Cur_t,
-    In_range = in_range(Ratio, 0.9, 1.1),
-    if In_range ->
-      Cur_n;
-    true->
-      New_n = floor(clamp(1/Cur_t, 0.1, 10) * Cur_n),
-      It(New_n, Bench(New_n))
+  Find_milli = fun It(L)->
+    N_runs = 40,
+    if length(L) == N_runs ->
+      Close_l    = lists:filter(fun({_, Ct})-> in_range(1/Ct,0.8, 1.2) end, L),
+      Avg_close  = lists:foldl(fun({Cn,Ct}, Acc)->Acc+(Cn/(Ct*length(Close_l))) end, 0, Close_l),
+      floor(Avg_close);
+    true ->
+      {Cur_n, Cur_t} = hd(L),
+      Ratio = 1/Cur_t,
+      New_n = floor(clamp(Ratio, 0.1, 10) * Cur_n),
+      New_t = Bench(New_n),
+      It([{New_n, New_t}|L])
     end
   end,
 
   Start = 200,
   _ = Bench(Start), % Preheat
-  Find_milli(Start, Bench(Start)).
+  Find_milli([{Start, Bench(Start)}]).
 
 
 
@@ -105,18 +109,43 @@ daxpy_nif(_,_,_,_,_,_)->
 wait_c(_)->
   nif_not_loaded.
 
-
 zipwith_concurrent(F, L1, L2)->
   ParentPID = self(),
-  Launch_Worker = fun(B1, B2)->
-    spawn(fun()-> ParentPID ! {F(B1, B2), self()} end)
-  end,
-  Retrieve_work = fun(Pid)->
-    receive {Result, Pid} ->
-      Result
-    end
-  end, 
+  N_elems   = length(L1),
 
-  Worker_pids = lists:zipwith(Launch_Worker, L1, L2), 
-  lists:map(Retrieve_work, Worker_pids).
+  %Receive datasets...
+  Worker_collector = 
+  fun()->
+    Collect =
+    fun Iterate(0, Acc)->
+      lists:reverse(Acc);
+    Iterate(Id, Acc)->
+      receive {Id, Result} ->
+        io:format("Received ~w ~n", [Id]),
+        Iterate(Id-1, [Result|Acc])
+      after 5000 -> 
+          timeout
+      end
+    end,
+    ParentPID ! Collect(N_elems, [])
+  end,
+  % Launch collector
+  CollectorPID = spawn(Worker_collector),
+  
+  % Launch datasets...
+  Generate_work =
+  fun It(0, [],[])->
+      ok;
+    It(I,[L1_h|L1_t], [L2_h|L2_t])->
+      spawn(fun() -> io:format("Generating ~w ~n",[I]), CollectorPID ! {I, F(L1_h,L2_h)} end),
+      It(I-1, L1_t, L2_t)
+  end,
+  % Launch generator
+  Generate_work(N_elems, L1, L2),
+
+  receive Result -> Result
+  after N_elems * 2000 ->
+    timeout
+  end.
+
 
