@@ -20,6 +20,12 @@ n_for_millis(Fct, Time, FctGen)->
       T/1000
   end,
 
+  Avg = fun(L)-> 
+    lists:foldl(fun({Cn,_}, Acc)->Acc+(Cn/(length(L))) end, 0, L)
+  end,
+        
+
+
   N_runs = 100,
   Max_it = 1000,
   Find_milli = 
@@ -28,21 +34,25 @@ n_for_millis(Fct, Time, FctGen)->
       nok;
 
     It(_,L, _) when length(L) == N_runs -> 
-        Avg_close  = lists:foldl(fun({Cn,_}, Acc)->Acc+(Cn/(length(L))) end, 0, L),
-        floor(Avg_close);
+        floor(Avg(L));
 
     It({Cur_n, Cur_t}, L, Cur_i)->
-        Ratio = Time/Cur_t,
-        New_n = floor(clamp(Ratio, 0.1, 10) * Cur_n),
-        New_t = Bench(New_n),
-        Valid = is_in_range(Ratio,0.8, 1.2),
+        Ratio  = clamp(Time/Cur_t, 0.1, 10),
+        Valid  = is_in_range(Ratio, 0.8, 1.2),
+        New_n  = case Valid of 
+                  false when length(L)>0  ->
+                    Avg(L);
+                  _ ->
+                    Ratio * Cur_n
+                  end,
+        Sample = {New_n, Bench(New_n)},
         
         io:format("Cur_n ~w, ratio ~w , valid ~w~n", [Cur_n, Ratio, Valid]),
         New_i = Cur_i + 1,
         if Valid ->
-          It({New_n, New_t}, [{New_n, New_t}|L], New_i);
+          It(Sample, [{Sample|L], New_i);
         true->
-          It({New_n, New_t}, L, New_i)
+          It(Sample, L, New_i)
         end
   end,
   Find_milli({200, Bench(200)}, [], 0).
