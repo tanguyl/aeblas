@@ -35,7 +35,7 @@ n_for_millis(Fct, Time, FctGen)->
         Ratio = Time/Cur_t,
         New_n = floor(clamp(Ratio, 0.1, 10) * Cur_n),
         New_t = Bench(New_n),
-        Valid = is_in_range(ratio,0.8, 1.2),
+        Valid = is_in_range(Ratio,0.8, 1.2),
         
         io:format("Cur_n ~w, ratio ~w , valid ~w~n", [Cur_n, Ratio, Valid]),
         New_i = Cur_i + 1,
