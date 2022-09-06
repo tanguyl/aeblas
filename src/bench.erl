@@ -13,37 +13,50 @@ is_in_range(V, Min, Max)->
     false
   end.
 
-n_for_ms(Fct, FctGen)->
+n_for_millis(Fct, Time, FctGen)->
   Bench = fun(N)->
-      N_runs = 40,
       V = FctGen(N),
-      Get_Milli = fun()-> {T,_} = timer:tc(Fct, [V,V]),  T/1000 end,
-      Avg_run   = lists:foldl(fun(T,Acc) -> T/N_runs+Acc end, 0, [Get_Milli() || _ <- lists:seq(1,N_runs)]),
-      Avg_run
+      {T,_} = timer:tc(Fct, [V,V]), 
+      T/1000
   end,
 
-  Find_milli = fun It(L)->
-    N_runs = 40,
-    if length(L) == N_runs ->
-      Close_l    = lists:filter(fun({_, Ct})-> is_in_range(1/Ct,0.8, 1.2) end, L),
-      Avg_close  = lists:foldl(fun({Cn,Ct}, Acc)->Acc+(Cn/(Ct*length(Close_l))) end, 0, Close_l),
-      floor(Avg_close);
-    true ->
-      {Cur_n, Cur_t} = hd(L),
-      Ratio = 1/Cur_t,
-      New_n = floor(clamp(Ratio, 0.1, 10) * Cur_n),
-      New_t = Bench(New_n),
-      It([{New_n, New_t}|L])
-    end
+  N_runs = 100,
+  Max_it = 1000,
+  Find_milli = 
+    fun It(_,_,Cur_i) when Cur_i == Max_it ->
+      io:format("Could not converge in n_for_millis."),
+      nok;
+
+    It(_,L, _) when length(L) == N_runs -> 
+        Avg_close  = lists:foldl(fun({Cn,_}, Acc)->Acc+(Cn/(length(L))) end, 0, L),
+        floor(Avg_close);
+
+    It({Cur_n, Cur_t}, L, Cur_i)->
+        Ratio = Time/Cur_t,
+        New_n = floor(clamp(Ratio, 0.1, 10) * Cur_n),
+        New_t = Bench(New_n),
+        Valid = is_in_range(Time/Cur_t,0.8, 1.2),
+        New_i = Cur_i + 1,
+        if Valid ->
+          It({New_n, New_t}, [{New_n, New_t}|L], New_i);
+        true->
+          It({New_n, New_t}, L, New_i)
+        end
   end,
-  Find_milli([{200, Bench(200)}]).
+  Find_milli({200, Bench(200)}, [], 0).
 
 
 gen_n_list(Elem, N)->
      [Elem || _ <- lists:seq(1,N)].
 
 add_e(X,Y)->
-    lists:zipwith(fun(L,R)->R+L end, X, Y).
+  add_e(X,Y,0,1000).
+
+add_e(_,_,R,0)->
+  R;
+add_e(X,Y,_,I)->
+  R = lists:zipwith(fun(L,R)->R+L end, X, Y),
+  add_e(X,Y,R,I-1).
 
 add_c(X, Y)->
     M = bit_size(X)/64,
@@ -61,30 +74,58 @@ bench_n(F, N)->
 
 bench_conc(Fun, Bs)->
     Bench = fun()->
-        {T,_} = timer:tc(fun()->aeblas:zipwith_concurrent(Fun, Bs, Bs)end),
+        {T,_} = timer:tc(fun()->prod_cons:zipwith_concurrent(Fun, Bs, Bs)end),
         T / 1000000
     end,
-    bench_n(Bench,20).
+    bench_n(Bench,1).
 
 bench_seq(Fun, Bs)->
     Bench = fun()->
         {T,_} = timer:tc(fun()->lists:zipwith(Fun, Bs, Bs)end),
         T / 1000000
     end,
-    bench_n(Bench, 20).
+    bench_n(Bench, 1).
 
 
-bench_erl(Ns)->
-  N_e = bench:n_for_ms(fun bench:add_e/2, fun(N)->lists:seq(1,N)end),
+bench_fct(F, Ns)->
+  N_e = bench:n_for_millis(F, 10, fun(N)->lists:seq(1,N)end),
+  io:format("Ne is ~w ~n", [N_e]),
   V_e = lists:seq(1,N_e),
 
-  Run_bench = fun(Bench)-> 
-    lists:map(fun(N)->Bench(fun add_e/2, gen_n_list(V_e, N))end, Ns) 
+  Run_bench = fun(Bench)->   
+    lists:map(fun(N)->Bench(fun add_e/2, gen_n_list(V_e, N))end, Ns)
   end,
 
   T_conc = Run_bench(fun bench_conc/2),
   T_seq  = Run_bench(fun bench_seq/2),
-  {{concurrent, T_conc}, {sequential, T_seq}, {list_size, N_e}}.
+  {{concurrent, T_conc}, {sequential, T_seq}, {list_size, N_e}, {n, Ns}}.
+
+
+bench_e(Ns)->
+  N_e = bench:n_for_millis(fun bench:add_e/2, 1, fun(N)->lists:seq(1,N)end),
+  io:format("Ne is ~w ~n", [N_e]),
+  V_e = lists:seq(1,N_e),
+
+  Run_bench = fun(Bench)->   
+    lists:map(fun(N)->Bench(fun add_e/2, gen_n_list(V_e, N))end, Ns)
+  end,
+
+  T_conc = Run_bench(fun bench_conc/2),
+  T_seq  = Run_bench(fun bench_seq/2),
+  {{concurrent, T_conc}, {sequential, T_seq}, {list_size, N_e}, {n, Ns}}.
+
+bench_c(Ns)->
+  N_c = bench:n_for_millis(fun bench:add_c/2, 1, fun(N)->aeblas:ltb(lists:seq(1,N))end),
+  io:format("N_c is ~w ~n", [N_c]),
+  V_c = aeblas:ltb(lists:seq(1,N_c)),
+
+  Run_bench = fun(Bench)->   
+    lists:map(fun(N)->Bench(fun add_c/2, gen_n_list(V_c, N))end, Ns)
+  end,
+
+  T_conc = Run_bench(fun bench_conc/2),
+  T_seq  = Run_bench(fun bench_seq/2),
+  {{concurrent, T_conc}, {sequential, T_seq}, {list_size, N_c}, {n, Ns}}.
 
 
 zipwith_concurrent(F, L1, L2)->
@@ -96,7 +137,7 @@ zipwith_concurrent(F, L1, L2)->
   fun()->
     Collect =
     fun Iterate(Id, Acc) when Id == N_elems->
-      lists:reverse(Acc);
+      ParentPID ! lists:reverse(Acc);
     Iterate(Id, Acc)->
       receive {Id, Result} ->
         Iterate(Id+1, [Result|Acc])

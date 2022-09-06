@@ -113,23 +113,35 @@ wait_c(_)->
 
 zipwith_concurrent(Op, M1, M2) ->
     ParentPID = self(),
+    N         = length(M1),
 
-    Producer = fun(L1, L2)->
-      spawn(fun() ->
-        ParentPID ! {Op(L1, L2), self()}
-      end)
-    end,
-
-    Consumer = fun(Pid)->
-      receive {Result, Pid} -> 
-          Result
-      after 10000*length(M1) ->
+    Consumer = 
+    fun It(I, Acc) when I==N->
+      ParentPID ! lists:reverse(Acc);
+    It(I, Acc)->
+      receive {Result, Val} when Val==I ->
+          It(I+1, [Result|Acc])
+      after 5000*N ->
         timeout
       end
     end,
+    ConsumerPID = spawn(fun()->Consumer(0,[])end),
 
-    PidMat = lists:zipwith(Producer,M1,M2),
-    lists:map(Consumer,PidMat).
+    Produce = 
+    fun It(_,[],[])->
+      ok;
+    It(I, L1, L2)->
+      spawn(fun() ->
+        ConsumerPID ! {Op(hd(L1), hd(L2)), I} end),
+      It(I+1, tl(L1), tl(L2))
+    end,
+
+    Produce(0, M1, M2),
+    receive Result->
+      Result
+    after 5000*N->
+      timeout
+    end.
 
 
 
