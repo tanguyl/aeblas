@@ -21,7 +21,7 @@ n_for_millis(Fct, Time, FctGen)->
   end,
 
   Avg = fun(L)-> 
-    lists:foldl(fun({Cn,_}, Acc)->Acc+(Cn/(length(L))) end, 0, L)
+    floor(lists:foldl(fun({Cn,_}, Acc)->Acc+(Cn/(length(L))) end, 0, L))
   end,
         
 
@@ -39,18 +39,19 @@ n_for_millis(Fct, Time, FctGen)->
     It({Cur_n, Cur_t}, L, Cur_i)->
         Ratio  = clamp(Time/Cur_t, 0.1, 10),
         Valid  = is_in_range(Ratio, 0.8, 1.2),
+        Pred   = Ratio * Cur_n,
         New_n  = case Valid of 
                   false when length(L)>0  ->
-                    Avg(L);
+                    floor((Avg(L)+Pred)/2);
                   _ ->
-                    Ratio * Cur_n
+                    floor(Ratio * Cur_n)
                   end,
         Sample = {New_n, Bench(New_n)},
         
         io:format("Cur_n ~w, ratio ~w , valid ~w~n", [Cur_n, Ratio, Valid]),
         New_i = Cur_i + 1,
         if Valid ->
-          It(Sample, [{Sample|L], New_i);
+          It(Sample, [Sample|L], New_i);
         true->
           It(Sample, L, New_i)
         end
