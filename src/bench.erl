@@ -23,8 +23,8 @@ n_for_millis(Fct, Time, FctGen)->
   N_runs = 100,
   Max_it = 1000,
   Find_milli = 
-    fun It(_,_,Cur_i) when Cur_i == Max_it ->
-      io:format("Could not converge in n_for_millis."),
+    fun It(_,L,Cur_i) when Cur_i == Max_it ->
+      io:format("Could not converge in n_for_millis; found only ~w samples.~n", [length(L)]),
       nok;
 
     It(_,L, _) when length(L) == N_runs -> 
